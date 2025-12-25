@@ -1,0 +1,12 @@
+Package                        Version
+------------------------------ -------
+bleak                          2.0.0
+meshcore                       2.2.5
+pip                            25.3
+pycayennelpp                   2.4.0
+pyobjc-core                    12.1
+pyobjc-framework-Cocoa         12.1
+pyobjc-framework-CoreBluetooth 12.1
+pyobjc-framework-libdispatch   12.1
+pyserial                       3.5
+pyserial-asyncio-fast          0.16
