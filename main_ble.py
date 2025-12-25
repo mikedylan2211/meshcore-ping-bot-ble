@@ -3,7 +3,7 @@ import logging
 from typing import Any
 from meshcore import MeshCore, EventType
 
-BLE_ADDRESS = "MeshCore-T114_t"  # MUST match advertised name or MAC
+BLE_ADDRESS = "MeshCore-1234"  # MUST match advertised name or MAC
 BLE_PIN = None                     # or "123456" if your device needs it
 CHANNEL_IDX = 1
 
@@ -39,7 +39,7 @@ def format_pathinfo(parsed: dict[str, Any]) -> str:
         return "(? hops, ?)"
     if parsed["path_len"] == 0:
         return "(0 hops, direct)"
-    return f"({parsed['path_len']} hops nach Meisterschwanden, {':'.join(parsed['path_nodes'])})"
+    return f"({parsed['path_len']} hops nach London, {':'.join(parsed['path_nodes'])})"
 
 
 async def main():
@@ -54,7 +54,6 @@ async def main():
 
     print("Connected over BLE")
 
-    # 🚨 REQUIRED for BLE
     await mc.start_auto_message_fetching()
 
     async def handle_rx_log_data(event):
