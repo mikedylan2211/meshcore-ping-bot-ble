@@ -4,7 +4,7 @@ from typing import Any
 from meshcore import MeshCore, EventType
 
 BLE_ADDRESS = "MeshCore-1234"  # MUST match advertised name or MAC
-BLE_PIN = None                     # or "123456" if your device needs it
+BLE_PIN = None                  # or "123456" if your device needs it
 CHANNEL_IDX = 1
 
 logging.basicConfig(level=logging.INFO)
@@ -16,41 +16,63 @@ latest_pathinfo_str = "(? hops, ?)"
 def parse_rx_log_data(payload: Any) -> dict[str, Any]:
     result: dict[str, Any] = {}
     try:
-        hex_str = payload.get("payload") if isinstance(payload, dict) else payload
+        if isinstance(payload, dict):
+            hex_str = payload.get("payload") or payload.get("raw_hex")
+        else:
+            hex_str = payload
         if not hex_str:
             return result
         if isinstance(hex_str, bytes):
             hex_str = hex_str.hex()
-        hex_str = hex_str.strip().lower()
+        hex_str = str(hex_str).lower().replace(" ", "").replace("\n", "").replace("\r", "")
         if len(hex_str) < 4:
             return result
 
+        result["header"] = hex_str[0:2]
         path_len = int(hex_str[2:4], 16)
-        path_hex = hex_str[4:4 + path_len * 2]
+        path_start = 4
+        path_end = path_start + path_len * 2
+        if len(hex_str) < path_end:
+            return {}
+
+        path_hex = hex_str[path_start:path_end]
         result["path_len"] = path_len
-        result["path_nodes"] = [path_hex[i:i+2] for i in range(0, len(path_hex), 2)]
-    except Exception:
-        pass
+        result["path"] = path_hex
+        result["path_nodes"] = [path_hex[i:i + 2] for i in range(0, len(path_hex), 2)]
+        if len(hex_str) >= path_end + 2:
+            result["channel_hash"] = hex_str[path_end:path_end + 2]
+    except Exception as ex:
+        _LOGGER.debug("Error parsing RX_LOG_DATA: %s", ex)
     return result
 
 
 def format_pathinfo(parsed: dict[str, Any]) -> str:
-    if "path_len" not in parsed:
+    path_len = parsed.get("path_len")
+    path_nodes = parsed.get("path_nodes") or []
+    if path_len is None:
         return "(? hops, ?)"
-    if parsed["path_len"] == 0:
+    if path_len == 0:
         return "(0 hops, direct)"
-    return f"({parsed['path_len']} hops nach London, {':'.join(parsed['path_nodes'])})"
+    return f"({path_len} hops nach London, {':'.join(path_nodes) if path_nodes else '?'})"
 
 
-async def main():
+async def main() -> int:
     global latest_pathinfo_str
 
     print(f"Connecting to BLE device: {BLE_ADDRESS}")
 
-    if BLE_PIN:
-        mc = await MeshCore.create_ble(BLE_ADDRESS, pin=str(BLE_PIN))
-    else:
-        mc = await MeshCore.create_ble(BLE_ADDRESS)
+    try:
+        if BLE_PIN:
+            mc = await MeshCore.create_ble(BLE_ADDRESS, pin=str(BLE_PIN))
+        else:
+            mc = await MeshCore.create_ble(BLE_ADDRESS)
+    except Exception as ex:
+        print(f"Failed to connect over BLE: {ex}")
+        return 1
+
+    if mc is None:
+        print("Failed to connect over BLE: no response from MeshCore device")
+        return 1
 
     print("Connected over BLE")
 
@@ -72,9 +94,17 @@ async def main():
 
         if chan == CHANNEL_IDX and "ping" in text.lower():
             reply = f"@[{sender}] Pong 🏓 {latest_pathinfo_str}"
-            await mc.commands.send_chan_msg(chan, reply)
+            result = await mc.commands.send_chan_msg(chan, reply)
+            if result.type == EventType.ERROR:
+                print(f"Error sending reply: {result.payload}")
+            else:
+                print(f"Reply sent: {reply}")
 
-    sub_chan = mc.subscribe(EventType.CHANNEL_MSG_RECV, handle_channel_message)
+    sub_chan = mc.subscribe(
+        EventType.CHANNEL_MSG_RECV,
+        handle_channel_message,
+        attribute_filters={"channel_idx": CHANNEL_IDX},
+    )
     sub_rx = mc.subscribe(EventType.RX_LOG_DATA, handle_rx_log_data)
 
     try:
@@ -86,6 +116,8 @@ async def main():
         await mc.stop_auto_message_fetching()
         await mc.disconnect()
         print("Disconnected")
+    return 0
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))
